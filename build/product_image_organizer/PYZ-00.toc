@@ -1,4 +1,4 @@
-('C:\\SPEC-STORAGE\\Products\\build\\product_image_organizer\\PYZ-00.pyz',
+('C:\\code\\Products\\build\\product_image_organizer\\PYZ-00.pyz',
  [('PIL',
    'C:\\Users\\jitta\\AppData\\Roaming\\Python\\Python310\\site-packages\\PIL\\__init__.py',
    'PYMODULE'),

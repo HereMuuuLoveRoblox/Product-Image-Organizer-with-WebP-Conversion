@@ -151,7 +151,7 @@ class ProductImageOrganizer:
         instructions_frame.grid(row=1, column=0, sticky=tk.EW, pady=(0, 10))
         ttk.Label(
             instructions_frame,
-            text="💡 Drag to reorder | First = MAIN image | All will convert to WebP with quality=85",
+            text="💡 Drag to reorder | First = MAIN image | All will convert to WebP with quality=95",
             foreground="#0078d4",
             font=('Segoe UI', 9, 'italic')
         ).pack(side=tk.LEFT)
@@ -161,43 +161,49 @@ class ProductImageOrganizer:
         list_frame.grid(row=2, column=0, sticky=tk.NSEW)
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
+        section_frame.rowconfigure(2, weight=1)  # Make image manager expandable
 
         # Canvas for scrolling
-        self.canvas = tk.Canvas(list_frame, bg='white', highlightthickness=1, highlightbackground='#cccccc')
+        self.canvas = tk.Canvas(list_frame, bg='white', highlightthickness=1, highlightbackground='#cccccc', height=400)
         self.canvas.grid(row=0, column=0, sticky=tk.NSEW)
 
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.canvas.yview)
         scrollbar.grid(row=0, column=1, sticky=tk.NS)
         self.canvas.config(yscrollcommand=scrollbar.set)
 
-        # Frame inside canvas for images
-        self.images_frame = ttk.Frame(self.canvas)
+        # Frame inside canvas for images - use tk.Frame for better event handling
+        self.images_frame = tk.Frame(self.canvas, bg='white')
         self.canvas_window = self.canvas.create_window((0, 0), window=self.images_frame, anchor=tk.NW)
 
         # Bind canvas events
         self.canvas.bind('<Configure>', self._on_canvas_configure)
         self.images_frame.bind('<Configure>', self._on_frame_configure)
-        self.canvas.bind_all('<MouseWheel>', self._on_mousewheel)
-        self.canvas.bind_all('<Button-4>', self._on_mousewheel)
-        self.canvas.bind_all('<Button-5>', self._on_mousewheel)
+        self.canvas.bind('<MouseWheel>', self._on_mousewheel)
+        self.canvas.bind('<Button-4>', self._on_mousewheel)
+        self.canvas.bind('<Button-5>', self._on_mousewheel)
 
         # Enable drag and drop to canvas
         self.setup_drag_drop()
 
     def _on_canvas_configure(self, event):
         """Update scroll region on canvas resize."""
-        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        self.root.after(10, lambda: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
 
     def _on_frame_configure(self, event):
-        """Update canvas window width."""
-        self.canvas.itemconfig(self.canvas_window, width=self.canvas.winfo_width() - 20)
+        """Update canvas window width to match canvas width."""
+        canvas_width = self.canvas.winfo_width()
+        if canvas_width > 1:
+            self.canvas.itemconfig(self.canvas_window, width=canvas_width - 20)
+        self.root.after(10, lambda: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
 
     def _on_mousewheel(self, event):
-        """Handle mouse wheel scrolling."""
-        if event.num == 5 or event.delta < 0:
-            self.canvas.yview_scroll(1, 'units')
-        elif event.num == 4 or event.delta > 0:
-            self.canvas.yview_scroll(-1, 'units')
+        """Handle mouse wheel scrolling on the canvas."""
+        # Only scroll if mouse is over canvas
+        if event.widget == self.canvas or self.canvas.winfo_containing(event.x_root, event.y_root) == self.canvas:
+            if event.num == 5 or event.delta < 0:
+                self.canvas.yview_scroll(3, 'units')
+            elif event.num == 4 or event.delta > 0:
+                self.canvas.yview_scroll(-3, 'units')
 
     def create_action_panel(self, parent):
         """
@@ -206,9 +212,10 @@ class ProductImageOrganizer:
         action_frame = ttk.Frame(parent)
         action_frame.grid(row=3, column=0, sticky=tk.EW, pady=(10, 0))
 
-        # Control buttons
+        # Control buttons - Left side
         ttk.Button(action_frame, text="🔄 Reset", command=self.reset_all, width=20).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Button(action_frame, text="❌ Clear Images", command=self.clear_images, width=20).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(action_frame, text="🔀 Reverse Order", command=self.reverse_images, width=20).pack(side=tk.LEFT, padx=(0, 10))
 
         # Spacer
         spacer = ttk.Frame(action_frame)
@@ -323,6 +330,9 @@ class ProductImageOrganizer:
         # Item frame
         item_frame = tk.Frame(self.images_frame, bg='white', relief=tk.RAISED, borderwidth=1)
         item_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Store the image index in the frame for drag-and-drop
+        item_frame.image_index = index
 
         # Left: Thumbnail and drag handle
         left_frame = tk.Frame(item_frame, bg='white')
@@ -345,10 +355,10 @@ class ProductImageOrganizer:
 
         # File name
         filename = os.path.basename(image_path)
-        ttk.Label(middle_frame, text=filename, font=('Segoe UI', 10, 'bold')).pack(anchor=tk.W)
+        tk.Label(middle_frame, text=filename, font=('Segoe UI', 10, 'bold'), bg='white').pack(anchor=tk.W)
 
         # File path
-        ttk.Label(middle_frame, text=image_path, font=('Segoe UI', 9), foreground='#666666').pack(anchor=tk.W)
+        tk.Label(middle_frame, text=image_path, font=('Segoe UI', 9), fg='#666666', bg='white').pack(anchor=tk.W)
 
         # Image type badge
         if index == 0:
@@ -356,48 +366,96 @@ class ProductImageOrganizer:
             badge_frame.pack(anchor=tk.W, pady=(5, 0))
             tk.Label(badge_frame, text="★ MAIN IMAGE ★", font=('Segoe UI', 9, 'bold'), bg='#2ecc71', fg='white', padx=8, pady=3).pack()
         else:
-            ttk.Label(middle_frame, text=f"Gallery Image #{index}", font=('Segoe UI', 9, 'italic'), foreground='#0078d4').pack(anchor=tk.W, pady=(5, 0))
+            tk.Label(middle_frame, text=f"Gallery Image #{index}", font=('Segoe UI', 9, 'italic'), fg='#0078d4', bg='white').pack(anchor=tk.W, pady=(5, 0))
 
         # Right: Buttons
         right_frame = tk.Frame(item_frame, bg='white')
         right_frame.pack(side=tk.RIGHT, padx=10, pady=10)
 
+        # Move buttons
+        buttons_frame = tk.Frame(right_frame, bg='white')
+        buttons_frame.pack(side=tk.TOP, pady=(0, 5))
+        
+        # Move up button
+        if index > 0:
+            ttk.Button(buttons_frame, text="▲ Up", command=lambda: self.move_image(index, 'up'), width=10).pack(side=tk.LEFT, padx=2)
+        else:
+            ttk.Button(buttons_frame, text="▲ Up", command=lambda: None, state=tk.DISABLED, width=10).pack(side=tk.LEFT, padx=2)
+        
+        # Move down button
+        if index < len(self.selected_images) - 1:
+            ttk.Button(buttons_frame, text="▼ Down", command=lambda: self.move_image(index, 'down'), width=10).pack(side=tk.LEFT, padx=2)
+        else:
+            ttk.Button(buttons_frame, text="▼ Down", command=lambda: None, state=tk.DISABLED, width=10).pack(side=tk.LEFT, padx=2)
+
+        # Remove button
         ttk.Button(right_frame, text="✕ Remove", command=lambda: self.remove_image(index), width=12).pack()
 
-        # Bind drag events
-        for widget in [item_frame, left_frame, drag_label, middle_frame]:
-            widget.bind('<Button-1>', lambda e: self.start_drag(e, index))
-            widget.bind('<B1-Motion>', lambda e: self.on_drag(e, index))
-            widget.bind('<ButtonRelease-1>', lambda e: self.end_drag(e))
+        # Bind drag events to all widgets for better drag detection
+        def bind_drag_to_widget(widget, idx):
+            """Recursively bind drag events to a widget and its children."""
+            widget.bind('<Button-1>', lambda e: self.start_drag(e, idx), add=True)
+            widget.bind('<B1-Motion>', lambda e: self.on_drag(e, idx), add=True)
+            widget.bind('<ButtonRelease-1>', lambda e: self.end_drag(e), add=True)
+            for child in widget.winfo_children():
+                bind_drag_to_widget(child, idx)
+        
+        bind_drag_to_widget(item_frame, index)
 
     def start_drag(self, event, index):
         """Start dragging an image."""
         self.dragging_index = index
 
     def on_drag(self, event, index):
-        """Handle dragging motion (can be extended for visual feedback)."""
-        pass
+        """Handle dragging motion with auto-scroll when dragging near edges."""
+        # Get cursor position
+        root_y = self.root.winfo_pointery()
+        canvas_y = self.canvas.winfo_rooty()
+        canvas_height = self.canvas.winfo_height()
+        
+        # Position relative to canvas
+        relative_y = root_y - canvas_y
+        
+        # Define scroll zones (top/bottom 50 pixels)
+        scroll_threshold = 50
+        
+        # Auto-scroll if dragging near top
+        if relative_y < scroll_threshold:
+            self.canvas.yview_scroll(-3, 'units')
+        # Auto-scroll if dragging near bottom
+        elif relative_y > (canvas_height - scroll_threshold):
+            self.canvas.yview_scroll(3, 'units')
 
     def end_drag(self, event):
-        """End dragging an image."""
-        if self.dragging_index is not None and event.widget.master:
-            # Get the widget under cursor
-            x = self.root.winfo_pointerx() - self.root.winfo_rootx()
-            y = self.root.winfo_pointery() - self.root.winfo_rooty()
-
-            # Find which image frame is under cursor
-            target_frame = self.root.winfo_containing(x, y)
-            if target_frame:
-                for i, image_path in enumerate(self.selected_images):
-                    if target_frame.winfo_parent() == str(self.images_frame.winfo_id()):
-                        if i != self.dragging_index and i is not None:
-                            # Swap images
-                            self.selected_images[self.dragging_index], self.selected_images[i] = (
-                                self.selected_images[i],
-                                self.selected_images[self.dragging_index],
-                            )
-                            self.update_image_display()
-                            break
+        """End dragging an image - reorder by detecting position."""
+        if self.dragging_index is not None:
+            try:
+                # Get cursor position relative to images_frame
+                root_y = self.root.winfo_pointery()
+                images_frame_y = self.images_frame.winfo_rooty()
+                relative_y = root_y - images_frame_y
+                
+                # Find which image frame is under the cursor based on Y position
+                children = self.images_frame.winfo_children()
+                for widget in children:
+                    widget_y = widget.winfo_y()
+                    widget_height = widget.winfo_height()
+                    
+                    # Check if cursor is over this widget
+                    if widget_y <= relative_y <= (widget_y + widget_height):
+                        # Get the image index stored in this frame
+                        if hasattr(widget, 'image_index'):
+                            target_index = widget.image_index
+                            if target_index != self.dragging_index:
+                                # Swap images in the list
+                                self.selected_images[self.dragging_index], self.selected_images[target_index] = (
+                                    self.selected_images[target_index],
+                                    self.selected_images[self.dragging_index],
+                                )
+                                self.update_image_display()
+                        break
+            except Exception:
+                pass
 
         self.dragging_index = None
 
@@ -405,6 +463,35 @@ class ProductImageOrganizer:
         """Remove an image from the list."""
         if 0 <= index < len(self.selected_images):
             del self.selected_images[index]
+            self.update_image_display()
+
+    def move_image(self, index, direction):
+        """
+        Move image up or down in the list.
+        
+        Args:
+            index: Current position of the image
+            direction: 'up' or 'down'
+        """
+        if direction == 'up' and index > 0:
+            # Move up: swap with previous
+            self.selected_images[index], self.selected_images[index - 1] = (
+                self.selected_images[index - 1],
+                self.selected_images[index],
+            )
+            self.update_image_display()
+        elif direction == 'down' and index < len(self.selected_images) - 1:
+            # Move down: swap with next
+            self.selected_images[index], self.selected_images[index + 1] = (
+                self.selected_images[index + 1],
+                self.selected_images[index],
+            )
+            self.update_image_display()
+
+    def reverse_images(self):
+        """Reverse the order of all images - first becomes last, last becomes first."""
+        if self.selected_images:
+            self.selected_images.reverse()
             self.update_image_display()
 
     def clear_images(self):
@@ -453,6 +540,27 @@ class ProductImageOrganizer:
         """Get file extension."""
         return os.path.splitext(file_path)[1]
 
+    def normalize_filename(self, filename):
+        """
+        Normalize filename by replacing spaces with underscores and removing special characters.
+        
+        Args:
+            filename: Original filename
+            
+        Returns:
+            Normalized filename
+        """
+        import re
+        # Replace spaces with underscores
+        filename = filename.replace(' ', '_')
+        # Remove special characters, keep only alphanumeric, underscore, and hyphen
+        filename = re.sub(r'[^a-zA-Z0-9_\-]', '', filename)
+        # Remove multiple consecutive underscores
+        filename = re.sub(r'_+', '_', filename)
+        # Remove leading/trailing underscores
+        filename = filename.strip('_')
+        return filename
+
     def rename_and_copy_images(self, folder_path, prefix):
         """
         Convert images to WebP and save to folder.
@@ -465,6 +573,9 @@ class ProductImageOrganizer:
             List of created files
         """
         created_files = []
+        
+        # Normalize prefix to remove spaces and special characters
+        normalized_prefix = self.normalize_filename(prefix)
 
         for index, image_path in enumerate(self.selected_images):
             try:
@@ -488,17 +599,17 @@ class ProductImageOrganizer:
                 # Determine the filename with .webp extension
                 if index == 0:
                     # Main image
-                    filename = f"{prefix}_Main.webp"
+                    filename = f"{normalized_prefix}_Main.webp"
                 else:
                     # Gallery images
                     gallery_num = str(index).zfill(2)
-                    filename = f"{prefix}_Gallery{gallery_num}.webp"
+                    filename = f"{normalized_prefix}_Gallery{gallery_num}.webp"
 
                 # Create the destination path
                 dest_path = os.path.join(folder_path, filename)
 
-                # Save as WebP with quality=85
-                img.save(dest_path, 'WEBP', quality=85, method=6)
+                # Save as WebP with quality=95 for excellent quality without much file size increase
+                img.save(dest_path, 'WEBP', quality=95, method=6)
                 created_files.append(filename)
 
             except Exception as e:
