@@ -6,10 +6,11 @@ Features: Drag-to-reorder, thumbnail previews, automatic WebP conversion, all in
 Key Features:
 - Thumbnail previews for all images
 - Drag-to-reorder images
-- Automatic WebP conversion with quality=85
+- Automatic WebP conversion with quality=95
 - Smart folder creation with duplicate handling
 - Modern UI with clear sections
 - Background processing
+- Save & reuse output folder paths
 
 Requirements:
 - Python 3.7+
@@ -22,6 +23,7 @@ import os
 from pathlib import Path
 from PIL import Image, ImageTk
 import threading
+import json
 
 
 class ProductImageOrganizer:
@@ -45,10 +47,58 @@ class ProductImageOrganizer:
         self.output_directory = os.path.dirname(os.path.abspath(__file__))
         self.dragging_index = None  # Track dragging image
         self.thumbnail_cache = {}  # Cache for thumbnails
+        
+        # Config file for saved paths
+        self.config_file = os.path.join(os.path.expanduser('~'), '.product_image_organizer_config.json')
+        self.saved_paths = self.load_saved_paths()
+        if self.saved_paths:
+            self.output_directory = self.saved_paths[0]  # Use most recent path
 
         # Configure styles
         self.setup_styles()
         self.setup_ui()
+
+    def load_saved_paths(self):
+        """
+        Load previously saved output paths from config file.
+        Returns a list of saved paths (most recent first).
+        """
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    return config.get('output_paths', [])
+        except Exception:
+            pass
+        return []
+
+    def save_path(self, path):
+        """
+        Save output path to config file.
+        Keeps up to 10 most recent paths, no duplicates.
+        """
+        try:
+            # Load existing paths
+            paths = self.load_saved_paths()
+            
+            # Remove if already exists
+            if path in paths:
+                paths.remove(path)
+            
+            # Add to front (most recent)
+            paths.insert(0, path)
+            
+            # Keep only 10 most recent
+            paths = paths[:10]
+            
+            # Save to config file
+            config = {'output_paths': paths}
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            self.saved_paths = paths
+        except Exception:
+            pass
 
     def setup_styles(self):
         """Configure ttk and custom styles for modern look."""
@@ -113,21 +163,47 @@ class ProductImageOrganizer:
 
     def create_output_section(self, parent):
         """
-        OUTPUT FOLDER: Allow users to select where to create folders
+        OUTPUT FOLDER: Allow users to select where to create folders with history
         """
         section_frame = ttk.LabelFrame(parent, text="📁 Output Folder", padding="12")
         section_frame.grid(row=1, column=0, sticky=tk.EW, pady=(0, 15))
         section_frame.columnconfigure(1, weight=1)
 
-        # Display current output directory
+        # Dropdown for saved paths
+        ttk.Label(section_frame, text="Recent Folders:", font=('Segoe UI', 9, 'bold')).grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 10), pady=(0, 5)
+        )
+        
         self.output_dir_var = tk.StringVar(value=self.output_directory)
-        dir_entry = ttk.Entry(section_frame, textvariable=self.output_dir_var, state=tk.DISABLED, font=('Segoe UI', 10))
-        dir_entry.grid(row=0, column=0, sticky=tk.EW, columnspan=2, pady=8)
+        self.output_combo = ttk.Combobox(
+            section_frame, 
+            textvariable=self.output_dir_var,
+            values=self.saved_paths,
+            state='readonly',
+            font=('Segoe UI', 10),
+            width=50
+        )
+        self.output_combo.grid(row=0, column=1, sticky=tk.EW, pady=(0, 5))
 
         # Browse button
-        ttk.Button(section_frame, text="📂 Browse...", command=self.browse_output_directory, width=20).grid(
-            row=0, column=2, padx=(10, 0), pady=8
+        ttk.Button(section_frame, text="📂 Browse...", command=self.browse_output_directory, width=15).grid(
+            row=0, column=2, padx=(10, 0), pady=(0, 5)
         )
+        
+        # Clear history button
+        ttk.Button(section_frame, text="🗑️ Clear History", command=self.clear_path_history, width=15).grid(
+            row=0, column=3, padx=(5, 0), pady=(0, 5)
+        )
+
+        # Display current path
+        self.path_label_frame = ttk.Frame(section_frame)
+        self.path_label_frame.grid(row=1, column=0, columnspan=4, sticky=tk.EW)
+        ttk.Label(self.path_label_frame, text="Current:", font=('Segoe UI', 9, 'bold')).pack(side=tk.LEFT, padx=(0, 5))
+        self.path_display_label = ttk.Label(self.path_label_frame, text=self.output_directory, font=('Segoe UI', 9), foreground='#0078d4')
+        self.path_display_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Bind combobox selection to update display
+        self.output_combo.bind('<<ComboboxSelected>>', self.on_path_selected)
 
     def create_image_manager_section(self, parent):
         """
@@ -253,11 +329,40 @@ class ProductImageOrganizer:
         return []
 
     def browse_output_directory(self):
-        """Open folder dialog to select output directory."""
+        """Open folder dialog to select output directory, save to history."""
         directory = filedialog.askdirectory(title="Select Output Folder")
         if directory:
             self.output_directory = directory
             self.output_dir_var.set(directory)
+            
+            # Save path to history
+            self.save_path(directory)
+            
+            # Update dropdown with new paths
+            self.output_combo['values'] = self.saved_paths
+
+    def clear_path_history(self):
+        """Clear all saved output paths."""
+        if messagebox.askyesno("Clear History", "Delete all saved output folder paths?"):
+            try:
+                if os.path.exists(self.config_file):
+                    os.remove(self.config_file)
+                self.saved_paths = []
+                self.output_combo['values'] = []
+                self.output_dir_var.set(os.path.dirname(os.path.abspath(__file__)))
+                self.output_directory = os.path.dirname(os.path.abspath(__file__))
+                messagebox.showinfo("Success", "History cleared!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to clear history: {str(e)}")
+
+    def on_path_selected(self, event):
+        """Handle path selection from dropdown."""
+        selected_path = self.output_dir_var.get()
+        if selected_path and os.path.exists(selected_path):
+            self.output_directory = selected_path
+            # Update display label
+            if hasattr(self, 'path_display_label'):
+                self.path_display_label.config(text=selected_path)
 
     def add_images(self):
         """Open file dialog to select images."""
